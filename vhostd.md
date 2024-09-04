@@ -4,15 +4,16 @@ Virtio VF PCIe devices can be attached to the guest VM using vhost acceleration 
 
 # Prerequisites
 
-1. Minimum hypervisor kernel version - Linux kernel 5.15 (for VFIO SR-IOV support).
-2. To use high-availability (the additional vfe-vhostd-ha service which can persist datapath when vfe-vhostd crashes), this linux [kernel patch](https://github.com/torvalds/linux/commit/ffed0518d871482e26c5826c0875bea6775446da)  must be applied on hypervisor.
+> [!IMPORTANT]
+> 1. Minimum hypervisor kernel version - Linux kernel 5.15 (for VFIO SR-IOV support).
+> 2. To use high-availability (the additional vfe-vhostd-ha service which can persist data-path when vfe-vhostd crashes), this linux [kernel patch](https://github.com/torvalds/linux/commit/ffed0518d871482e26c5826c0875bea6775446da)  must be applied on hypervisor.
 
 # Install vHost Acceleration Software Stack
 
 Vhost acceleration software stack is built using open-source BSD licensed DPDK.
 
 ## Install vhost acceleration software
-Pre-built release package is installed to `/opt/mellanox/dpdk-vhost-vfe`. To use `vfe-vhost-cli`, make sure `/opt/mellanox/dpdk-vhost-vfe/bin` is in enviroment variable `PATH`.
+Pre-built release package is installed to `/opt/mellanox/dpdk-vhost-vfe`. To use `vfe-vhost-cli`, make sure `/opt/mellanox/dpdk-vhost-vfe/bin` is in environment variable `PATH`.
 
 1. Clone the software source code, or install previous [releases](https://github.com/Mellanox/dpdk-vhost-vfe/releases):
 
@@ -106,9 +107,9 @@ Upstream QEMU later than 8.1 can be used or the following [NVIDIA QEMU][3].
             <qemu:arg value='vhost-user-blk-pci,chardev=char1,page-per-vq=on,num-queues=4,disable-legacy=on,disable-modern=off'/>
           </qemu:commandline>
 
-4. Bind PCIe VF device to vfio-pci driver and enable SR-IOV.
+4. Bind PCIe VF device to vfio-pci driver.
 
-   * Bind the virtio-net PF devices to vfio-pci driver and create 1 virtio-net VF:
+   * Bind the virtio-net PF devices to vfio-pci driver:
 
          [host]# lspci -s 0000:af:00.2
          af:00.2 Ethernet controller: Red Hat, Inc. Virtio network device (rev 01)
@@ -122,13 +123,7 @@ Upstream QEMU later than 8.1 can be used or the following [NVIDIA QEMU][3].
          Kernel driver in use: vfio-pci
          Enable SR-IOV and create a virtio-net VF(s):
 
-         [host]# echo 1 > /sys/bus/pci/devices/0000:af:00.2/sriov_numvfs
-
-         [host]# lspci | grep Virtio
-         af:00.2 Ethernet controller: Red Hat, Inc. Virtio network device
-         af:04.5 Ethernet controller: Red Hat, Inc. Virtio network device
-
-   * Bind the virtio-blk PF devices to vfio-pci driver and create 1 virtio-blk VF:
+   * Bind the virtio-blk PF devices to vfio-pci driver:
 
          [host]# lspci -s 0000:af:00.3
          af:00.3 Non-Volatile memory controller: Red Hat, Inc. Virtio block device (rev 01)
@@ -142,38 +137,36 @@ Upstream QEMU later than 8.1 can be used or the following [NVIDIA QEMU][3].
          Kernel driver in use: vfio-pci
          Enable SR-IOV and create a virtio-blkVF(s):
 
-         [host]# echo 1 > /sys/bus/pci/devices/0000:af:00.3/sriov_numvfs
-
-         [host]# lspci | grep Virtio
-         af:00.3 Non-Volatile memory controller: Red Hat, Inc. Virtio block device
-         af:05.1 Non-Volatile memory controller: Red Hat, Inc. Virtio block device
-
 
 4. Provision and add VF device to vhostd service:
 
    * For virtio-net VF:
 
-     1. Add a VF representor to the OVS bridge on the DPU:
+     1. Add PF device and wait virtio-net-controller finishing handle PF FLR:
+
+            [host]# vfe-vhost-cli mgmtpf -a 0000:af:00.2
+
+     2. Enable SR-IOV and create 1 net VF:
+
+            [host]# echo 1 > /sys/bus/pci/devices/0000:af:00.2/sriov_numvfs
+
+     3. Add a VF representor to the OVS bridge on the DPU:
 
             [dpu]# virtnet query -p 0 -v 0 | grep sf_rep_net_device
             "sf_rep_net_device": "en3f0pf0sf3000",
             [dpu]# ovs-vsctl add-port ovsbr1 en3f0pf0sf3000
 
-     2. Add PF device and wait virtio-net-controller finishing handle PF FLR:
-
-            [host]# vfe-vhost-cli mgmtpf -a 0000:af:00.2
-
-     3. Provision VF on DPU(optional):
+     4. Provision VF on DPU(optional):
 
             [dpu]# virtnet modify -p 0 -v 0 device -m 00:00:00:00:33:00
 
-     4. Add VF to vhostd service:
+     5. Add VF to vhostd service:
 
              [host]# vfe-vhost-cli vf -a 0000:af:04.5 -v /tmp/vhost-net0
 
    * For virtio-blk VF:
 
-     1. Create block device on the DPU:
+     1. Create block PF device on the DPU:
 
             On BlueField-3 SNAP:
             [dpu]# spdk_rpc.py bdev_null_create Null0 1024 512
@@ -194,10 +187,14 @@ Upstream QEMU later than 8.1 can be used or the following [NVIDIA QEMU][3].
             # service or after pf or vf device delete from vhostd service , or vhostd service restart:
             #       For BlueField-3, the VF controller is automatically recreated
             #       For BlueField-2, the VF controller must be manually recreated
-            # Use snap_rpc.py controller_list to check for controller exsistence and create controller if it's not there
+            # Use snap_rpc.py controller_list to check for controller existence and create controller if it's not there
             [dpu]# snap_rpc.py controller_virtio_blk_create mlx5_0 --pf_id 0 --vf_id 0 --bdev_type spdk --bdev Null0 --force_in_order
 
-     3. Add virtio-blk VF to vhostd service:
+     3. Enable SR-IOV and create 1 blk VF:
+
+            [host]# echo 1 > /sys/bus/pci/devices/0000:af:00.3/sriov_numvfs
+
+     4. Add virtio-blk VF to vhostd service:
 
             [host]# vfe-vhost-cli vf -a 0000:af:05.1 -v /tmp/vhost-blk0
 
@@ -241,7 +238,7 @@ This service communicates to QEMU vhost-user front-end and programs virtio VF th
 
 ## Vfe-vhostd-ha Service
 
-Running vfe-vhostd-ha service allows datapath to persist in case vfe-vhostd crash. vhostd service and vhostd-ha service will connect each other through unix domain socket. So vhostd-ha service can get information from vhostd service and give back to vhostd service for recovery.
+Running vfe-vhostd-ha service allows data-path to persist in case vfe-vhostd crash. vhostd service and vhostd-ha service will connect each other through unix domain socket. So vhostd-ha service can get information from vhostd service and give back to vhostd service for recovery.
 
 * Start/Stop/Log of the vfe-vhostd-ha service
 
@@ -256,7 +253,31 @@ After install new software package:
     systemctl restart vfe-vhostd-ha
     systemctl restart vfe-vhostd
 
+## Vfe-vhostd service options
+Besides standard DPDK EAL options, vfe-vhostd can also accept several service options in
+`/usr/lib/systemd/system/vfe-vhostd.service`.
+
+    --client: register a vhost-user socket as client mode.
+    --serverip <ip>: specify ip or server name RPC service listen on.
+
+
 ## Vfe-vhost-cli RPC Commands
+
+    [host]# vfe-vhost-cli -h
+    usage: vfe-vhost-cli [-h] [-s SERVERIP] {version,mgmtpf,vf} ...
+
+    Nvidia vhostd-rpc command line interface v1.3.6
+
+    positional arguments:
+    {version,mgmtpf,vf}   ** Use -h for sub-command usage
+    version             show vhostd version info
+    mgmtpf              Management PF device
+    vf                  Management VF device
+
+    optional arguments:
+    -h, --help            show this help message and exit
+    -s SERVERIP, --serverip SERVERIP
+                          server ip to connect to
 
 ### Show vfe-vhostd version
 
@@ -314,7 +335,7 @@ Before adding any VF device, PF device must be added in advance. Before removing
 ## Parameters for  QEMU emulated virtio device
 
 ### Direct doorbell mapping
-QEMU's direct doorbell mapping feature can reduce vmexit when guest driver rings VQ doorbell. To use this feature, virtio-device must work in modern mode and page-per-vq must be set.
+QEMU's direct doorbell mapping feature can reduce `VMEXIT` when guest driver rings VQ doorbell. To use this feature, virtio-device must work in modern mode and page-per-vq must be set.
 
 ### Virtio-net and Virtio-blk properties
 The offload properties (host_tso4, csum, ...) or VQ properties (tx_queue_size, rx_queue_size...) should be properly set to QEMU. Full property list can be get from following QEMU command:
@@ -328,7 +349,12 @@ For virtio-net, guest driver will assign each TX queue or RX queue a dedicated M
 ### Jambo MTU
 Configure virtio-net device MTU on DPU, set QEMU virtio-net device property `host_mtu` to the same value.
 
-## Use presetup to reducing live migration downtime
+### None support of vIOMMU mode
+
+`iommu_platform=on` isn't supported.
+
+## Features only available on NVIDIA QEMU
+### Use presetup to reduce live migration downtime
 
 QEMU can send out virtio device state in early live migration stage, so vhostd backend can apply device state before VM is down. This can reduce live migration downtime a lot. Only [NVIDIA QEMU][3](branch stable-8.1-presetup) has this feature.
 
@@ -337,9 +363,18 @@ Add `x-early-migration=on` in VM XML:
     <qemu:arg value='-device'/>
     <qemu:arg value='virtio-net-pci,netdev=vhost1,mac=00:00:00:00:33:00,vectors=10,page-per-vq=on,rx_queue_size=1024,tx_queue_size=1024,mq=on,disable-legacy=on,disable-modern=off,x-early-migration=on'/>
 
-### None support of vIOMMU mode
+### Use fixed VQ notify offset to reduce device configuration time
 
-`iommu_platform=on` isn't supported.
+Normally each VQ can have it's own `queue_notify_off`, Queue Notify address is `cap.offset + queue_notify_off * notify_off_multiplier`([Virtio spec][4]). For external host notifier(direct doorbell mapping), per VQ notifier can
+consume a lot of time. A new property `vq-noffset-zero` is introduced to set `queue_notify_off`=0. So only VQ index
+0 need send out `VHOST_USER_BACKEND_VRING_HOST_NOTIFIER_MSG`([Vhost-user Protocol][5]), instead of all VQs.
+
+Add `vq-noffset-zero` in VM XML:
+
+    <qemu:arg value='virtio-net-pci,netdev=vdpa,mac=00:00:00:00:00:22,page-per-vq=on,rx_queue_size=512,tx_queue_size=512,mq=on,disable-modern=off,disable-legacy=on,vq-noffset-zero=on'/>
+
+
+
 
 # Isolate DPA cores for both virtio-net controller and virtio-blk controller
 
@@ -381,12 +416,13 @@ In virtio-net controller configuration file /opt/mellanox/mlnx_virtnet/virtnet.c
 
 * vhostd log like following(map after unmap):
 
-      VIRTIO VDPA virtio_vdpa_dev_dma_unmap(): DMA unmap region: HVA 0x7f6c40000000, GPA 0x0, QEMU_VA 0x7f31c0000000, size 0xc0000000.
-      VIRTIO VDPA virtio_vdpa_dev_dma_unmap(): DMA unmap region: HVA 0x7f6900000000, GPA 0x100000000, QEMU_VA 0x7f3280000000, size 0x340000000.
-      VIRTIO VDPA virtio_vdpa_dev_set_mem_table(): DMA map region 0: HVA 0x7f62c0000000, GPA 0x0, QEMU_VA 0x7f3a00000000, size 0xc0000000.
-      VIRTIO VDPA virtio_vdpa_dev_set_mem_table(): DMA map region 1: HVA 0x7f5f80000000, GPA 0x100000000, QEMU_VA 0x7f3ac0000000, size 0x340000000.
-
-  This kind of log may hint same UUID VFs are used by different VM. This is wrong setting, and the behavior is unpredictable.
+> [!WARNING]
+> VIRTIO VDPA virtio_vdpa_dev_dma_unmap(): DMA unmap region: HVA 0x7f6c40000000, GPA 0x0, QEMU_VA 0x7f31c0000000, size 0xc0000000.  
+> VIRTIO VDPA virtio_vdpa_dev_dma_unmap(): DMA unmap region: HVA 0x7f6900000000, GPA 0x100000000, QEMU_VA 0x7f3280000000, size 0x340000000.  
+> VIRTIO VDPA virtio_vdpa_dev_set_mem_table(): DMA map region 0: HVA 0x7f62c0000000, GPA 0x0, QEMU_VA 0x7f3a00000000, size 0xc0000000.  
+> VIRTIO VDPA virtio_vdpa_dev_set_mem_table(): DMA map region 1: HVA 0x7f5f80000000, GPA 0x100000000, QEMU_VA 0x7f3ac0000000, size 0x340000000.  
+>  
+>  This kind of log may hint same UUID VFs are used by different VM. This is wrong setting, and the behavior is unpredictable.
 
 
 # Reference
@@ -394,7 +430,12 @@ For NVIDIA BlueField virtio-net PCIe devices and NVIDIA BlueField-3 virtio-blk c
 
 * [NVIDIA BlueField Virtio-net][1]
 * [NVIDIA BlueField-3 SNAP for NVMe and Virtio-blk][2]
+* [NVIDIA QEMU][3]
+* [Virtio SPEC][4]
+* [Vhost-user Protocol][5]
 
 [1]: https://docs.nvidia.com/networking/display/bluefieldvirtionetv190
 [2]: https://docs.nvidia.com/networking/display/bluefield3snap440
-[3]: https://github.com/Mellanox/qemu
+[3]: https://github.com/Mellanox/qemu/tree/stable-8.1-presetup
+[4]: https://docs.oasis-open.org/virtio/virtio/v1.2/cs01/virtio-v1.2-cs01.html
+[5]: https://qemu-project.gitlab.io/qemu/interop/vhost-user.html
