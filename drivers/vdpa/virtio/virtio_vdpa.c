@@ -26,7 +26,7 @@ RTE_LOG_REGISTER(virtio_vdpa_logtype, pmd.vdpa.virtio, NOTICE);
 	rte_log(RTE_LOG_ ## level, virtio_vdpa_logtype, \
 		"VIRTIO VDPA %s(): " fmt "\n", __func__, ##args)
 
-int virtio_vdpa_lcore_id = 0;
+volatile int virtio_vdpa_lcore_id = 0;
 static int stage1 = 0;
 #define VIRTIO_VDPA_DEV_CLOSE_WORK_CLEAN 0
 #define VIRTIO_VDPA_DEV_CLOSE_WORK_START 1
@@ -60,6 +60,8 @@ static pthread_mutex_t iommu_domain_locks[VIRTIO_VDPA_MAX_IOMMU_DOMAIN];
 
 
 static struct virtio_ha_vf_drv_ctx cached_ctx;
+
+static pthread_mutex_t remote_launcher = PTHREAD_MUTEX_INITIALIZER;
 
 static void
 virtio_ha_vf_drv_ctx_set(const struct virtio_dev_name *vf, const void *ctx, struct virtio_ha_vm_dev_ctx *vm_ctx)
@@ -582,8 +584,6 @@ virtio_vdpa_virtq_disable(struct virtio_vdpa_priv *priv, int vq_idx)
 		uint64_t features;
 		virtio_pci_dev_features_get(priv->vpdev, &features);
 		if (!(features & VIRTIO_F_RING_RESET)) {
-			DRV_LOG(WARNING, "%s can't disable queue after driver ok without queue reset support",
-					priv->vdev->device->name);
 			return 0;
 		}
 	}
@@ -1500,14 +1500,19 @@ virtio_vdpa_dev_close(int vid)
 
 
 
+	pthread_mutex_lock(&remote_launcher);
 	virtio_vdpa_lcore_id = rte_get_next_lcore(virtio_vdpa_lcore_id, 1, 1);
 	priv->lcore_id = virtio_vdpa_lcore_id;
 	DRV_LOG(INFO, "%s vfid %d launch dev close work lcore:%d", vdev->device->name, priv->vf_id, priv->lcore_id);
-	ret = rte_eal_remote_launch(virtio_vdpa_dev_close_work, priv, virtio_vdpa_lcore_id);
-	if (ret) {
-		DRV_LOG(ERR, "%s vfid %d failed launch work ret:%d lcore:%d", vdev->device->name, priv->vf_id, ret, virtio_vdpa_lcore_id);
-	}
 	priv->dev_work_flag = VIRTIO_VDPA_DEV_CLOSE_WORK_START;
+	rte_eal_wait_lcore(priv->lcore_id);
+	ret = rte_eal_remote_launch(virtio_vdpa_dev_close_work, priv, priv->lcore_id);
+	if (ret) {
+		DRV_LOG(ERR, "%s vfid %d failed launch work ret:%d lcore:%d", vdev->device->name,
+				priv->vf_id, ret, priv->lcore_id);
+		priv->dev_work_flag = VIRTIO_VDPA_DEV_CLOSE_WORK_CLEAN;
+	}
+	pthread_mutex_unlock(&remote_launcher);
 
 	gettimeofday(&end, NULL);
 
