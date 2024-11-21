@@ -334,7 +334,7 @@ static int __jrpc_server_start(struct jrpc_server *server)
 
 	freeaddrinfo(servinfo); /* all done with this structure */
 
-	if (listen(sockfd, 5) == -1) {
+	if (listen(sockfd, 64) == -1) {
 		perror("listen");
 		exit(1);
 	}
