@@ -14,8 +14,8 @@ if has_libuuid == 0
 	subdir_done()
 endif
 
-sources = files('cJSON.c', 'jsonrpc-c.c', 'jsonrpc-client.c', 'main.c', 'vdpa_rpc.c')
-headers = files('cJSON.h', 'jsonrpc-c.h', 'jsonrpc-client.h', 'vdpa_rpc.h')
+sources = files('cJSON.c', 'jsonrpc-c.c', 'main.c', 'vdpa_rpc.c')
+headers = files('cJSON.h', 'jsonrpc-c.h', 'vdpa_rpc.h')
 deps += ['vhost', 'ethdev', 'cmdline', 'vdpa_virtio', 'common_virtio', 'common_virtio_mi','common_virtio_ha']
 
 install_data([
@@ -36,6 +36,15 @@ configure_file(input : 'vfe-vhostd.service.in',
                output : 'vfe-vhostd.service',
                configuration: conf,
                install_dir : '/usr/lib/systemd/system/')
+
+# json c client APP
+executable('vfe-vhost-cli-vf',
+        files('cJSON.c', 'jsonrpc-c.c', 'jsonrpc-client.c', 'jsonrpc-client-main.c'),
+        c_args: default_cflags,
+        link_args: default_ldflags,
+        include_directories: includes,
+        install_rpath: join_paths(get_option('prefix'), driver_install_path),
+        install: true)
 
 # if meson >= 0.61.0, can use install_symlink instead
 meson.add_install_script('sh', '-c',

@@ -187,6 +187,7 @@ override_dh_auto_install-arch:
 	mkdir -p $(CURDIR)/debian/dpdk-vhost-vfe/usr/lib/systemd/system/
 	install obj-*/app/dpdk-virtio-ha $(CURDIR)/debian/dpdk-vhost-vfe/$(PREFIX)/bin/vfe-vhostd-ha
 	install obj-*/app/dpdk-vfe-vdpa $(CURDIR)/debian/dpdk-vhost-vfe/$(PREFIX)/bin/vfe-vhostd
+	install obj-*/app/vfe-vdpa/vfe-vhost-cli-vf $(CURDIR)/debian/dpdk-vhost-vfe/$(PREFIX)/bin/vfe-vhost-cli-vf
 	install app/vfe-vdpa/vhostmgmt $(CURDIR)/debian/dpdk-vhost-vfe/$(PREFIX)/bin/vfe-vhost-cli
 	install app/vfe-vdpa/check_pf_reset.sh $(CURDIR)/debian/dpdk-vhost-vfe/$(PREFIX)/bin
 	install vhostd.md $(CURDIR)/debian/dpdk-vhost-vfe/$(PREFIX)/doc

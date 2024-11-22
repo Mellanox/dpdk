@@ -21,11 +21,10 @@
 #define KEY_ERROR_DATA "data"
 
 struct jsonrpc_client {
-	char ip[16];
+	const char *ip;
 	uint16_t port;
 };
 
-__rte_internal
 cJSON *jsonrpc_client_call_method(struct jsonrpc_client *client, const char *name,
 				char *param);
 #endif

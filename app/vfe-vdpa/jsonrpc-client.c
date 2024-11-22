@@ -139,7 +139,7 @@ static char *recv_reply_timeout(int sock_fd, int timeout)
 
 		size_recv = recv(sock_fd, reply + total_size, CHUNK_SIZE, 0);
 		if (size_recv < 0) {
-			usleep(100000);
+			usleep(1000);
 			continue;
 		}
 
@@ -182,10 +182,10 @@ static int jsonrpc_client_send_rpc_message(struct jsonrpc_client *client,
 	if (ret)
 		goto out;
 
-	*result = recv_reply_timeout(sock_fd, 120);
+	*result = recv_reply_timeout(sock_fd, 125);
 	if (!*result)
 		ret = -1;
-
+    printf("%s\n", *result);
 out:
 	close(sock_fd);
 	return ret;
