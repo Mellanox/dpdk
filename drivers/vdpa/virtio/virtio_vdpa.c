@@ -2210,7 +2210,10 @@ virtio_vdpa_dev_do_remove(struct rte_pci_device *pci_dev, struct virtio_vdpa_pri
 
 	if (priv->fd_args_stored) {
 		ret = virtio_ha_vf_devargs_fds_remove(&priv->vf_name, &priv->pf_name);
-		if (ret < 0)
+		/* if messgage send successfully, wait 100ms for HA close fd */
+		if (ret > 0)
+			usleep(100 * 1000);
+		else if (ret < 0)
 			DRV_LOG(ERR, "Failed to remove vf devargs and fds: %s", priv->vf_name.dev_bdf);
 	}
 

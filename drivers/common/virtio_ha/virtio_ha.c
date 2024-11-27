@@ -1288,7 +1288,7 @@ virtio_ha_vf_devargs_fds_remove(struct virtio_dev_name *vf,
 
 		virtio_ha_free_msg(msg);
 
-		return 0;
+		return 1;
 	}
 }
 
