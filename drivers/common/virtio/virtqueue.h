@@ -244,7 +244,7 @@ struct virtio_admin_ctrl_hdr {
  * If cleared to 0, indicates that the same command is submitted
  * again may succeed.
  */
-typedef uint8_t virtio_admin_ctrl_ack;
+typedef volatile uint8_t virtio_admin_ctrl_ack;
 
 #define VIRTIO_MAX_ADMIN_DATA 2048
 
@@ -266,7 +266,7 @@ struct vq_desc_extra {
 #define virtnet_aq_to_vq(avq) container_of(avq, struct virtqueue, aq)
 #define virtnet_get_aq_hdr_addr(avq) (struct virtio_admin_ctrl *)(avq->virtio_admin_hdr_mem)
 struct desc_state {
-	bool in_use;
+	volatile bool in_use;
 	sem_t wait_sem;
 };
 

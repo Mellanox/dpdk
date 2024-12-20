@@ -114,8 +114,8 @@ virtio_vdpa_cmd_free_desc(struct virtio_hw *hw,uint16_t idx)
 	rte_spinlock_unlock(&hw->avq->lock);
 
 	gettimeofday(&start, NULL);
-	DRV_LOG(INFO, "vq->vq_free_cnt=%d vq->vq_desc_head_idx=%d avq:%p time:%lu.%06lu",
-		vq->vq_free_cnt, vq->vq_desc_head_idx, hw->avq, start.tv_sec, start.tv_usec);
+	DRV_LOG(INFO, "vq->vq_free_cnt=%d vq->vq_desc_head_idx=%d avq:%p cons:%d pro:%d  time:%lu.%06lu",
+		vq->vq_free_cnt, vq->vq_desc_head_idx, hw->avq, vq->vq_used_cons_idx, vq->vq_avail_idx, start.tv_sec, start.tv_usec);
 
 }
 
@@ -159,6 +159,8 @@ virtio_vdpa_mi_poll(void *arg)
 			usleep(100);
 		}
 
+		rte_spinlock_lock(&avq->lock);
+
 		used_idx = (uint32_t)(vq->vq_used_cons_idx
 				& (vq->vq_nentries - 1));
 		uep = &vq->vq_split.ring.used->ring[used_idx];
@@ -171,6 +173,9 @@ virtio_vdpa_mi_poll(void *arg)
 		avq->desc_list[idx].in_use = false;
 		/* in_use should be fenced to let other thread see */
 		rte_smp_wmb();
+
+		rte_spinlock_unlock(&avq->lock);
+
 		sem_post(&avq->desc_list[idx].wait_sem);
 	}
 
@@ -279,7 +284,7 @@ virtio_vdpa_send_admin_command(struct virtadmin_ctl *avq,
 {
 	virtio_admin_ctrl_ack status = ~0;
 	struct virtqueue *vq;
-	int i;
+	int i, j;
 
 	if (!avq) {
 		DRV_LOG(ERR, "Admin queue is not supported");
@@ -295,8 +300,21 @@ virtio_vdpa_send_admin_command(struct virtadmin_ctl *avq,
 
 	for (i = 0;; i++) {
 		sem_wait(&avq->desc_list[*head].wait_sem);
+
+		for (j = 0;;j++) {
+			if (avq->desc_list[*head].in_use != false)
+				usleep(1000000);
+			else
+				break;
+
+			if (!(j%10))
+				DRV_LOG(INFO, "Admin head:%d avq:%p in use true try after 1s", *head, avq);
+		}
+
 		if (i >= VIRTIO_ADMIN_CMD_RETRY_CNT)
 			break;
+
+		rte_io_rmb();
 		if(ctrl->status && (!(ctrl->status & VIRTIO_ADMIN_CMD_STATUS_DNR_BIT))) {
 			DRV_LOG(INFO, "No:%d cmd status:0x%x, head:%d avq:%p submit again after 1s", i, ctrl->status, *head, avq);
 			usleep(1000000);
@@ -332,11 +350,14 @@ static void virtio_vdpa_free_desc_check(struct virtadmin_ctl *avq, uint16_t free
 		} else {
 			avq->virtio_admin_hdr_mem = avq->virtio_admin_hdr_mem_base +
 						vq->vq_desc_head_idx * ADMIN_CMD_HDR_MAX_SIZE;
+			if (avq->desc_list[vq->vq_desc_head_idx].in_use != false) {
+				DRV_LOG(ERR, "Admin head:%d avq:%p in use is true", vq->vq_desc_head_idx, avq);
+			}
 			gettimeofday(&start, NULL);
 			DRV_LOG(INFO, "vq->vq_desc_head_idx = %d, vq_free_cnt = %d, vdev_id=%d "
-				"vq->hw->avq = %p vq = %p hdr=0x%lx time:%lu.%06lu",
+				"vq->hw->avq = %p vq = %p hdr=0x%lx cons:%d pro:%d time:%lu.%06lu",
 				vq->vq_desc_head_idx, vq->vq_free_cnt, vdev_id, avq, vq,
-				avq->virtio_admin_hdr_mem, start.tv_sec, start.tv_usec);
+				avq->virtio_admin_hdr_mem, vq->vq_used_cons_idx, vq->vq_avail_idx, start.tv_sec, start.tv_usec);
 			break;
 		}
 	} while(1);
