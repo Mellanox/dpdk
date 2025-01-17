@@ -164,7 +164,8 @@ virtio_vdpa_mi_poll(void *arg)
 		used_idx = (uint32_t)(vq->vq_used_cons_idx
 				& (vq->vq_nentries - 1));
 		uep = &vq->vq_split.ring.used->ring[used_idx];
-		idx = (uint32_t) uep->id;
+		rte_io_rmb();
+		idx = uep->id;
 		rte_io_rmb();
 		if (!avq->desc_list[idx].in_use) {
 			DRV_LOG(ERR, "desc:%d is not head, avq:%p", idx, avq);
@@ -308,7 +309,7 @@ virtio_vdpa_send_admin_command(struct virtadmin_ctl *avq,
 				break;
 
 			if (!(j%10))
-				DRV_LOG(INFO, "Admin head:%d avq:%p in use true try after 1s", *head, avq);
+				DRV_LOG(INFO, "Admin head:%d avq:%p in use true j:%d i:%d try after 1s", *head, avq, j, i);
 		}
 
 		if (i >= VIRTIO_ADMIN_CMD_RETRY_CNT)
@@ -316,7 +317,7 @@ virtio_vdpa_send_admin_command(struct virtadmin_ctl *avq,
 
 		rte_io_rmb();
 		if(ctrl->status && (!(ctrl->status & VIRTIO_ADMIN_CMD_STATUS_DNR_BIT))) {
-			DRV_LOG(INFO, "No:%d cmd status:0x%x, head:%d avq:%p submit again after 1s", i, ctrl->status, *head, avq);
+			DRV_LOG(INFO, "No:%d cmd status:0x%x, head:%d avq:%p j:%d submit again after 1s", i, ctrl->status, *head, avq, j);
 			usleep(1000000);
 			/* Kick again */
 			rte_spinlock_lock(&avq->lock);
